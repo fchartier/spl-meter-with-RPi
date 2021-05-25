@@ -6,6 +6,7 @@ from scipy.signal import lfilter
 import numpy
 import csv
 import datetime
+import argparse
 
 ## For web browser handling
 #from selenium import webdriver
@@ -42,6 +43,15 @@ SINGLE_DECIBEL_FILE_PATH = get_path(BASE_DIR, 'decibel_data/single_decibel.txt')
 MAX_DECIBEL_FILE_PATH = get_path(BASE_DIR, 'decibel_data/max_decibel.txt')
 
 START_DATE = datetime.datetime.now()
+CSV_FILE_PATH = get_path(BASE_DIR, 'decibel_data/spl-meter-output-%s.csv' % START_DATE.strftime("%y%m%d_%H%M%S"))
+
+parser = argparse.ArgumentParser("SPL Meter")
+parser.add_argument('-csv', action="store_true", help="Generate CSV file")
+args = parser.parse_args()
+
+GENERATE_CSV = args.csv
+
+
 
 '''
 Listen to mic
@@ -89,9 +99,10 @@ def update_max_if_new_is_larger_than_max(new, max):
 
 def listen(old=0, error_count=0, min_decibel=100, max_decibel=0):
     print("Listening")
-    f_out = open("spl-meter-output-%s.csv" % START_DATE.strftime("%y%m%d_%H%M%S"), "w")
-    writer = csv.writer(f_out)
-    writer.writerow(["timestamp", "value_db"])
+    if GENERATE_CSV:
+        f_out = open(CSV_FILE_PATH, "w")
+        writer = csv.writer(f_out)
+        writer.writerow(["timestamp", "value_db"])
     old_time = START_DATE
 
     while True:
@@ -109,7 +120,7 @@ def listen(old=0, error_count=0, min_decibel=100, max_decibel=0):
             y = lfilter(NUMERATOR, DENOMINATOR, decoded_block)
             new_decibel = 20*numpy.log10(spl.rms_flat(y))
             new_time = datetime.datetime.now()
-            if is_meaningful(old, new_decibel) or is_time(old_time, new_time):
+            if GENERATE_CSV and (is_meaningful(old, new_decibel) or is_time(old_time, new_time)):
                 writer.writerow([
                     # datetime.datetime.now().replace(microsecond=0).isoformat(), 
                     datetime.datetime.now().isoformat(), 
@@ -124,7 +135,8 @@ def listen(old=0, error_count=0, min_decibel=100, max_decibel=0):
                 #max_decibel = update_max_if_new_is_larger_than_max(new_decibel, max_decibel)
                 #click('update_decibel')
 
-    f_out.close()
+    if GENERATE_CSV:
+        f_out.close()
     stream.stop_stream()
     stream.close()
     pa.terminate()
