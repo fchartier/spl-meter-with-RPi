@@ -1,9 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os, errno
 import pyaudio
 import spl_lib as spl
 from scipy.signal import lfilter
 import numpy
+import csv
+import datetime
 
 ## For web browser handling
 #from selenium import webdriver
@@ -39,6 +41,8 @@ HTML_PATH = get_path(BASE_DIR, 'html/main.html', 'file:///')
 SINGLE_DECIBEL_FILE_PATH = get_path(BASE_DIR, 'decibel_data/single_decibel.txt')
 MAX_DECIBEL_FILE_PATH = get_path(BASE_DIR, 'decibel_data/max_decibel.txt')
 
+START_DATE = datetime.datetime.now()
+
 '''
 Listen to mic
 '''
@@ -53,6 +57,9 @@ stream = pa.open(format = FORMAT,
 
 def is_meaningful(old, new):
     return abs(old - new) > 3
+
+def is_time(old, new):
+    return (new - old).total_seconds() >= 30
 
 def update_text(path, content):
     try:
@@ -82,6 +89,11 @@ def update_max_if_new_is_larger_than_max(new, max):
 
 def listen(old=0, error_count=0, min_decibel=100, max_decibel=0):
     print("Listening")
+    f_out = open("spl-meter-output-%s.csv" % START_DATE.strftime("%y%m%d_%H%M%S"), "w")
+    writer = csv.writer(f_out)
+    writer.writerow(["timestamp", "value_db"])
+    old_time = START_DATE
+
     while True:
         try:
             ## read() returns string. You need to decode it into an array later.
@@ -96,6 +108,15 @@ def listen(old=0, error_count=0, min_decibel=100, max_decibel=0):
             ## This is where you apply A-weighted filter
             y = lfilter(NUMERATOR, DENOMINATOR, decoded_block)
             new_decibel = 20*numpy.log10(spl.rms_flat(y))
+            new_time = datetime.datetime.now()
+            if is_meaningful(old, new_decibel) or is_time(old_time, new_time):
+                writer.writerow([
+                    # datetime.datetime.now().replace(microsecond=0).isoformat(), 
+                    datetime.datetime.now().isoformat(), 
+                    "%0.2f" % new_decibel
+                    ])
+                f_out.flush()
+                old_time = new_time
             if is_meaningful(old, new_decibel):
                 old = new_decibel
                 print('A-weighted: {:+.2f} dB'.format(new_decibel))
@@ -103,7 +124,7 @@ def listen(old=0, error_count=0, min_decibel=100, max_decibel=0):
                 #max_decibel = update_max_if_new_is_larger_than_max(new_decibel, max_decibel)
                 #click('update_decibel')
 
-
+    f_out.close()
     stream.stop_stream()
     stream.close()
     pa.terminate()
